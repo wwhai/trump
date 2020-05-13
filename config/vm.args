@@ -1,0 +1,6 @@
+-name trump@127.0.0.1
+-mnesia dir './trump_mnesia'
+-setcookie hellofuck
+
++K true
++A30
