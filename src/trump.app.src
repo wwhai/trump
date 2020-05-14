@@ -5,7 +5,11 @@
   {mod, {trump_app, []}},
   {applications,
    [kernel,
-    stdlib
+    stdlib,
+    cowboy,
+    esockd,
+    mysql,
+    jiffy
    ]},
   {env,[]},
   {modules, []},

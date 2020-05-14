@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%% @doc trump public API
+%% @doc trump application
 %% @end
 %%%-------------------------------------------------------------------
 
@@ -10,9 +10,11 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
-    trump_sup:start_link().
+    {ok, [{tcp_port,TcpPort},{udp_port,UdpPort}]} = application:get_env(trump, trump_options),
+    io:format("trump-Server DEBUG --->>> Start tcp listener ~n"),
+    trump_tcp_server_sup:start_link(TcpPort),
+    io:format("trump-Server DEBUG --->>> Start udp listener ~n"),
+    trump_udp_server_sup:start_link(UdpPort).
 
 stop(_State) ->
     ok.
-
-%% internal functions
