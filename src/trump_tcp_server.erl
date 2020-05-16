@@ -4,11 +4,11 @@
 -export([start_link/2, start/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 %% 进程状态数据
--record(trump_connection_state, {transport, socket, trump_client_info}).
 -record(trump_client_info, {client_id, ip, auth = false, transport, socket}).
+-record(trump_connection_state, {transport, socket, trump_client_info}).
 
 %% ETS 表名
--define(CLIENT_TABLE, trump_connection_table).
+-define(TRUMP_CLIENT_TABLE, trump_client_table).
 %% 等待认证事件5S
 -define(EXPIRE_TIME, 3000).
 %% 报文类型
@@ -51,7 +51,7 @@
 %% start
 start(Port) when is_integer(Port) ->
   EtsOptions = [named_table, public, set, {keypos, #trump_client_info.client_id}, {write_concurrency, true}, {read_concurrency, true}],
-  ets:new(?CLIENT_TABLE, EtsOptions),
+  ets:new(?TRUMP_CLIENT_TABLE, EtsOptions),
   {ok, TcpOptions} = application:get_env(trump, tcp_options),
   MFA = {?MODULE, start_link, []},
 
@@ -130,7 +130,7 @@ handle_cast({auth, PayLoad}, State) ->
       {noreply, State};
     {ok, [<<"id">>,<<"client_id">>], [[_DBIdx,CId]]} ->
       io:format("trump-Server DEBUG --->>> Auth success:~p ~n", [CId]),
-      Object = ets:match_object(trump_connection_table , {trump_client_info , ClientId , '$2' , '$3', '$4' , '$5' } ),
+      Object = ets:match_object(?TRUMP_CLIENT_TABLE , {trump_client_info , ClientId , '$2' , '$3', '$4' , '$5' } ),
       case Object of 
         %% ETS没有记录，直接连接
         []->
@@ -138,10 +138,10 @@ handle_cast({auth, PayLoad}, State) ->
           io:format("trump-Server DEBUG --->>> This client is First join ~n"),
           #trump_connection_state{transport = Transport, socket = Socket, trump_client_info = #trump_client_info{ip = IP}} = State,
           trumpClientInfo = #trump_client_info{ client_id = ClientId ,auth = true,transport = Transport,socket = Socket,ip = IP},    
-          ets:insert(?CLIENT_TABLE,  trumpClientInfo),
+          ets:insert(?TRUMP_CLIENT_TABLE,  trumpClientInfo),
           NewState = State#trump_connection_state{trump_client_info = trumpClientInfo};
         %% ETS有记录，把前者踢下去
-        %% [{trump_client_info, _C, _I, _A , _T, Socket}] = ets:match_object(trump_connection_table,{trump_client_info,<<"4d45d94142276ad38364049c56d8ed42">>,'$2', '$3', '$4','$5'}).
+        %% [{trump_client_info, _C, _I, _A , _T, Socket}] = ets:match_object(trump_client_table,{trump_client_info,<<"4d45d94142276ad38364049c56d8ed42">>,'$2', '$3', '$4','$5'}).
         [{trump_client_info, _C, _I, _A , Transport, BeforeSocket}] ->
           %% 踢出前者
           gen_server:cast(self(), {kick_out,BeforeSocket}),
@@ -150,7 +150,7 @@ handle_cast({auth, PayLoad}, State) ->
           %% 直接生成新的客户端信息
           trumpClientInfo = #trump_client_info{ client_id = ClientId ,auth = true,transport = Transport,socket = Socket,ip = IP},    
           io:format("trump-Server DEBUG --->>> Build new socket: ~p ~n",[Socket]),
-          ets:insert(?CLIENT_TABLE,  trumpClientInfo),
+          ets:insert(?TRUMP_CLIENT_TABLE,  trumpClientInfo),
           NewState = State#trump_connection_state{trump_client_info = trumpClientInfo}
         end,
         {noreply, NewState}
@@ -221,7 +221,7 @@ handle_info({tcp, _RemoteSocket, BinData}, State) ->
 
 handle_info({tcp_error, Socket, Reason}, State) ->
   io:format("trump-Server DEBUG --->>> handle_info tcp_error ~p , Error from: ~p~n", [Reason, Socket]),
-  %% ets:match_delete(?CLIENT_TABLE, {'_', #trump_client_info{socket = Socket, _ = '_'}}),
+  %% ets:match_delete(?TRUMP_CLIENT_TABLE, {'_', #trump_client_info{socket = Socket, _ = '_'}}),
   {stop, normal, State};
 
 %% 连接断开:
@@ -229,7 +229,7 @@ handle_info({tcp_error, Socket, Reason}, State) ->
 handle_info({tcp_closed, Socket}, State) ->
   io:format("trump-Server DEBUG --->>> Socket cloesd: ~p ~n", [Socket]),
   %% 从ETS中删除Socket
-  ets:match_delete(?CLIENT_TABLE, {'_',{trump_client_info,'$1','$2', '$3', '$4', Socket}}),
+  ets:match_delete(?TRUMP_CLIENT_TABLE, {'_',{trump_client_info,'$1','$2', '$3', '$4', Socket}}),
   {stop, normal, State};
 
 

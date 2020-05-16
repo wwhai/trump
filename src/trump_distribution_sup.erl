@@ -18,7 +18,7 @@ init([]) ->
   Shutdown = 2000,
   Type = worker,
 
-  AChild = {trump_distribution, {trump_distribution, start_link, []},
+  AChild = {trump_distribution, {trump_distribution, start, []},
     Restart, Shutdown, Type, [trump_distribution]},
 
   {ok, {SupFlags, [AChild]}}.
