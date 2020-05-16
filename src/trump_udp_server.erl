@@ -6,6 +6,7 @@
 %%%-------------------------------------------------------------------
 -module(trump_udp_server).
 -export([start/1]).
+-export([hand_udp_data/1]).
 -export([start_link/2, loop/2]).
 
 -define(UDP_OPTS, [binary, {reuseaddr, true}]).
@@ -14,18 +15,24 @@ start(Port) ->
   ok = esockd:start(),
   Opts = [{udp_options, ?UDP_OPTS}],
   MFA = {?MODULE, start_link, []},
-  esockd:open_udp('urap', Port, Opts, MFA).
+  esockd:open_udp(urap_connector, Port, Opts, MFA).
 
-start_link(Transport, Peer) ->
-  {ok, spawn_link(?MODULE, loop, [Transport, Peer])}.
+start_link(Transport, PeerSocket) ->
+  {ok, spawn_link(?MODULE, loop, [Transport, PeerSocket])}.
 
 %%
+%% Peer 是客户端的信息
 %%
-%%
-loop(Transport, Peer) ->
+loop(Transport, PeerSocket) ->
   receive
-    {datagram, From, UdpData} ->
-      io:format("UDP DEBUG ===>>> Host: ~s , Data:~p~n", [esockd:format(Peer), UdpData]),
-      From ! {datagram, Peer, <<"OK">>},
-      spawn(fun() -> loop(Transport, Peer) end) 
+    {datagram, LocalSocket, UdpData} ->
+      io:format("UDP DEBUG ===>>>LocalSocket:~p PeerSocket: ~s , Data:~p~n", [LocalSocket,esockd:format(PeerSocket), UdpData]),
+      spawn(fun () ->
+          hand_udp_data(UdpData)
+      end),
+      loop(Transport, PeerSocket)
   end.
+
+hand_udp_data(_P)->
+  %% From ! {ok},
+  ok.

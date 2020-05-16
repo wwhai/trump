@@ -21,35 +21,31 @@
 -define(AUTH_OK, 6).
 -define(AUTH_FAIL, 7).
 -define(SEND, 8).
--define(SEND_FAIL, 9).
--define(PUBLISH, 10).
--define(PUBLISH_OK, 11).
--define(PUBLISH_FAIL, 12).
--define(CREATE_GROUP, 13).
--define(CREATE_GROUP_OK, 14).
--define(CREATE_GROUP_FAIL, 15).
--define(REMOVE_GROUP, 16).
--define(REMOVE_GROUP_OK, 17).
--define(REMOVE_GROUP_FAIL, 18).
--define(JOIN_GROUP, 19).
--define(JOIN_GROUP_OK, 20).
--define(JOIN_GROUP_FAIL, 21).
--define(EXIT_GROUP, 22).
--define(EXIT_GROUP_OK, 23).
--define(EXIT_GROUP_FAIL, 24).
+-define(SEND_OK, 9).
+-define(SEND_FAIL, 10).
+-define(PUBLISH, 11).
+-define(PUBLISH_OK, 12).
+-define(PUBLISH_FAIL, 13).
+-define(CREATE_GROUP, 14).
+-define(CREATE_GROUP_OK, 15).
+-define(CREATE_GROUP_FAIL, 16).
+-define(REMOVE_GROUP, 17).
+-define(REMOVE_GROUP_OK, 18).
+-define(REMOVE_GROUP_FAIL, 19).
+-define(JOIN_GROUP, 20).
+-define(JOIN_GROUP_OK, 21).
+-define(JOIN_GROUP_FAIL, 22).
+-define(EXIT_GROUP, 23).
+-define(EXIT_GROUP_OK, 24).
+-define(EXIT_GROUP_FAIL, 25).
 %% 广播
--define(CAST, 25).
--define(CAST_OK, 26).
--define(CAST_FAIL, 27).
+-define(CAST, 26).
+-define(CAST_OK, 27).
+-define(CAST_FAIL, 28).
 %% 协议错误
--define(PROTOCOL_ERROR, 28).
+-define(PROTOCOL_ERROR, 29).
 %% 被踢下线
--define(KICKOUT, 29).
-
-%% Mysql query
-%%--------------------------------------------------------------------
-%% MySQL Connect/Query
-%%--------------------------------------------------------------------
+-define(KICKOUT, 30).
 
 
 %% start
@@ -66,7 +62,7 @@ start(Port) when is_integer(Port) ->
       {ok, _, [[Version]]} = mysql:query(mysql_connector, <<"SELECT version()">>),
       io:format("trump-Server DEBUG --->>> Mysql has connected,Pid is ~p ,version is ~p ~n", [MysqlPid, Version]),
       esockd:start(),
-      esockd:open(trump_server_connector, Port, TcpOptions, MFA);
+      esockd:open(trap_connector, Port, TcpOptions, MFA);
     {error, {_ErrorCode, _StatementId, ErrorMessage}} ->
       io:format("trump-Server DEBUG --->>> Mysql connect error reason is ~p ~n", [ErrorMessage]);
     {error, {{badmatch, {error, econnrefused}}, _}} ->
@@ -123,7 +119,7 @@ handle_cast({auth, PayLoad}, State) ->
   <<ClientId:32/binary, _/binary>> = PayLoad,
   io:format("trump-Server DEBUG --->>> Require auth and clientid is:~p ~n", [ClientId]),
 
-  Sql = <<"SELECT `id`, `client_id` FROM ez_device WHERE `client_id` =? limit 1">>,
+  {ok, Sql} = application:get_env(trump, authsql),
   {ok, StatementId} = mysql:prepare(mysql_connector, Sql),
   R = mysql:execute(mysql_connector, StatementId, [ClientId]),
 
