@@ -56,8 +56,7 @@ start() ->
     mnesia:create_schema(get_nodes()),
     mnesia:start(),                                      
     %% 集群内的客户端存放表                                          
-    mnesia:create_table(?CLUSTER_CLIENT_TABLE, [{ram_copies, get_nodes()},  
-                                              {attributes, record_info(fields, trump_cluster_client)}]),  
+    mnesia:create_table(?CLUSTER_CLIENT_TABLE, [{ram_copies, get_nodes()}, {attributes, record_info(fields, trump_cluster_client)}]),  
     mnesia:add_table_index(?CLUSTER_CLIENT_TABLE, pid),                                        
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
@@ -75,9 +74,22 @@ handle_call(_Request, _From, _State) ->
 
 %% handle_cast/2
 %% ====================================================================
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+%% 客户端掉线的时候，需要通知分布层
+%% 然后分布层再广播出去
+%%
+handle_cast({client_disconnect, Node , Socket}, State) ->
+    io:format("Distribution LOG =-----=> Client:[~p] on Node:~p disconnect ~n",[Socket,Node]),
+    {noreply, State};
+%%
+%% 客户端上线通知
+%%
+handle_cast({client_connect, Node , Socket}, State) ->
+    io:format("Distribution LOG =-----=> Client:[~p] on Node:~p connect ~n",[Socket,Node]),
+    {noreply, State};
 
+handle_cast(Msg, State) ->
+    io:format("Distribution LOG =*-*-*-*-*-=> Cast msg :[~p] ~n",[Msg]),
+    {noreply, State}.
 
 %% handle_info/2
 %% ====================================================================
@@ -100,26 +112,14 @@ code_change(_OldVsn, State, _Extra) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
-%%
-%% Start distribution layer
-%%
+
 get_nodes()->
     [node() | nodes()].
-    % {ok,{{mode,Mode,cluster_nodes,  Nodes}}} = application:get_env(trump, cluster),
-    % case Mode of
-    %     static ->
-    %         Nodes;
-    %     discovery ->
-    %         [node() | nodes()]
-    % end.
 
 %%
 %% 动态添加一个节点
 %%
 add_node(Node)->
-    %% 首先判断是否ping的到
-    %% if ping -> insert
-    %% else -> log
     case net_adm:ping(Node) of 
         pong ->
             io:format("Distribution LOG =*-*-*-*-*-=> Node :~p join cluster success!Cluster nodes is~p:~n",[Node,get_nodes()]);
@@ -141,4 +141,13 @@ synchroized_cluster()->
 %% 向集群广播本地数据
 %%
 broad_cast_local()->
+    ok.
+
+%%
+%% 当本地收到事件以后，需要广播出去，广播的办法是：遍历Node，然后广播一个元组出去
+%% 其中广播的 NMFA = Node,trump_distriubtion,hand_cluster_event,{Node,Event:{message,args...}}
+%% hand_cluster_event 是节点之间RPC同步调用的函数
+%% 
+hand_cluster_event(_Msg)->
+
     ok.
