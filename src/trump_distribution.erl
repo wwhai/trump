@@ -22,17 +22,14 @@
 -module(trump_distribution).
 -behaviour(gen_server).
 -export([start/0]).
--export([synchroized_cluster/0]).
--export([broad_cast_local/0]).
 -export([get_nodes/0]).
 -export([get_clients/0]).
 -export([add_node/1]).
+-export([broad_cast_event/1]).
+-export([hand_cluster_event/1]).
 %%
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
-%% ====================================================================
-%% API functions
-%% ====================================================================
 -export([]).
 
 %% ====================================================================
@@ -50,7 +47,7 @@
 
 %% 
 %% start_link/0
-%% ====================================================================
+%%
 start() ->
     mnesia:delete_schema(get_nodes()),
     mnesia:create_schema(get_nodes()),
@@ -64,47 +61,53 @@ start() ->
 init([]) ->
     {ok, #state{}}.
 
-
+%%
 %% handle_call/3
-%% ====================================================================
+%%
 handle_call(_Request, _From, _State) ->
     Reply = ok,
     {reply, Reply, _State}.
 
-
+%% 
 %% handle_cast/2
-%% ====================================================================
 %% 客户端掉线的时候，需要通知分布层
 %% 然后分布层再广播出去
 %%
-handle_cast({client_disconnect, Node , Socket}, State) ->
-    io:format("Distribution LOG =-----=> Client:[~p] on Node:~p disconnect ~n",[Socket,Node]),
+handle_cast({client_disconnect, Node , ClientId}, State) ->
+    io:format("Distribution LOG =-----=> Client:[~p] on Node:~p disconnect ~n",[ClientId, Node]),
+    broad_cast_event({client_disconnect, Node , ClientId}),
     {noreply, State};
+
 %%
 %% 客户端上线通知
 %%
-handle_cast({client_connect, Node , Socket}, State) ->
-    io:format("Distribution LOG =-----=> Client:[~p] on Node:~p connect ~n",[Socket,Node]),
+handle_cast({client_connect, Node , ClientId}, State) ->
+    io:format("Distribution LOG =-----=> Client:[~p] on Node:~p connect ~n",[ClientId, Node]),
+    broad_cast_event({client_connect, Node , ClientId}),
     {noreply, State};
 
+%%
+%% OTP callback
+%%
 handle_cast(Msg, State) ->
-    io:format("Distribution LOG =*-*-*-*-*-=> Cast msg :[~p] ~n",[Msg]),
+    io:format("Distribution LOG =*-*-*-*-*-=> handle_cast msg :[~p] ~n",[Msg]),
     {noreply, State}.
 
+%%
 %% handle_info/2
-%% ====================================================================
+%%
 handle_info(_Info, State) ->
     {noreply, State}.
 
-
+%%
 %% terminate/2
-%% ====================================================================
+%%
 terminate(_Reason, _State) ->
     ok.
 
-
+%%
 %% code_change/3
-%% ====================================================================
+%%
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
@@ -133,21 +136,63 @@ get_clients()->
     ets:match_object(?TRUMP_CLIENT_TABLE , {trump_client_info , '$1' , '$2' , '$3', '$4' , '$5' }).
 
 %%
-%% 同步集群数据
-%%
-synchroized_cluster()->
-    ok.
-%%
-%% 向集群广播本地数据
-%%
-broad_cast_local()->
-    ok.
-
-%%
 %% 当本地收到事件以后，需要广播出去，广播的办法是：遍历Node，然后广播一个元组出去
 %% 其中广播的 NMFA = Node,trump_distriubtion,hand_cluster_event,{Node,Event:{message,args...}}
-%% hand_cluster_event 是节点之间RPC同步调用的函数
-%% 
-hand_cluster_event(_Msg)->
+%%
+broad_cast_event(Msg)->
+    %% 获取所有节点
+    NodeList = nodes(),
+    %% 定义一个函数，用来给远程节点发送通知
+    F = fun (Node)  ->
+            %% 调用远程节点的 hand_cluster_event 函数
+            case rpc:call(Node, trump_distriubtion, hand_cluster_event, Msg) of 
+                %% 如果节点坏了，打印log
+                {badrpc, _} ->
+                    io:format("Distribution LOG =*-*-*-*-*-=> Node :~p broadcast failed!~n",[ Node ]),
+                    badrpc;
+                    _Other ->
+                    ok
+            end
+        end,
+    %% 遍历List    
+    lists:foreach(F,NodeList).
 
-    ok.
+%%
+%% 集群的消息统一入口,这里处理集群内的通知
+%% 收到客户端上线通知，就在集群表中增加一条记录
+%% 收到客户端下线通知，就在集群表中删除一条记录
+%% 集群表结构:
+%% [ Node                    |             ClientId            |
+%% |───────────────────────────────────────────────────────────|
+%% | n1@1.0.0.1              |<<"111111111111111111111111111">>|
+%% | n2@2.0.0.1              |<<"222222222222222222222222222">>|
+%% | n3@3.0.0.1              |<<"222222222222222222222222222">>|
+%%  ───────────────────────────────────────────────────────────
+%% 节点上下线不需要建表，只需要通知即可
+%% -------------------------------------------------------------------------------------
+
+%%
+%% 客户端上线
+%%
+hand_cluster_event({client_connect, Node , ClientId})->
+    io:format("Distribution LOG =-----=> Client:[~p] on Node:~p connect ~n",[ClientId, Node]);
+%%
+%% 客户端下线
+%%
+hand_cluster_event({client_disconnect, Node , ClientId})->
+    io:format("Distribution LOG =-----=> Client:[~p] on Node:~p disconnect ~n",[ClientId, Node]);
+%%
+%% 节点下线
+%%
+hand_cluster_event({node_disconnect, Node})->
+    io:format("Distribution LOG =-----=> Node:~p disconnect ~n",[Node]);
+%%
+%% 节点上线
+%%
+hand_cluster_event({node_connect, Node})->
+    io:format("Distribution LOG =-----=> Node:~p connect ~n",[Node]);
+%%
+%% 其他消息
+%%
+hand_cluster_event(Msg)->
+    io:format("Distribution LOG =*-*-*-*-*-=> Cluster msg :[~p] ~n",[Msg]).

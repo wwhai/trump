@@ -4,8 +4,9 @@
 -include("trump_protocol.hrl").
 -export([start_link/2, start/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
-%% 进程状态数据
+%% 客户端的信息
 -record(trump_client_info, {client_id, ip, auth = false, transport, socket}).
+%% 进程状态数据，包含了一个客户端的信息
 -record(trump_connection_state, {transport, socket, trump_client_info}).
 
 %% ETS 表名
@@ -95,7 +96,7 @@ handle_cast({auth, PayLoad}, State) ->
       {noreply, State};
     {ok, [<<"id">>,<<"client_id">>], [[_DBIdx,CId]]} ->
       io:format("TRUMP TCP DEBUG --->>> Auth success:~p ~n", [CId]),
-      Object = ets:match_object(?TRUMP_CLIENT_TABLE , {trump_client_info , ClientId , '$2' , '$3', '$4' , '$5' } ),
+      Object = ets:match_object(?TRUMP_CLIENT_TABLE , {trump_client_info , ClientId ,'$1', '$2' , '$3', '$4' } ),
       case Object of 
         %% ETS没有记录，直接连接
         []->
@@ -105,7 +106,7 @@ handle_cast({auth, PayLoad}, State) ->
           trumpClientInfo = #trump_client_info{ client_id = ClientId ,auth = true,transport = Transport,socket = Socket,ip = IP},    
           ets:insert(?TRUMP_CLIENT_TABLE,  trumpClientInfo),
           %% 通知分布层
-          gen_server:cast(trump_distribution, {client_connect, node(), Socket}),
+          gen_server:cast(trump_distribution, {client_connect, node(), ClientId}),
           NewState = State#trump_connection_state{trump_client_info = trumpClientInfo};
         %% ETS有记录，把前者踢下去
         %% [{trump_client_info, _C, _I, _A , _T, Socket}] = ets:match_object(trump_client_table,{trump_client_info,<<"4d45d94142276ad38364049c56d8ed42">>,'$2', '$3', '$4','$5'}).
@@ -119,7 +120,7 @@ handle_cast({auth, PayLoad}, State) ->
           io:format("TRUMP TCP DEBUG --->>> Build new socket: ~p ~n",[Socket]),
           ets:insert(?TRUMP_CLIENT_TABLE,  trumpClientInfo),
           %% 通知分布层
-          gen_server:cast(trump_distribution, {client_connect, node(), Socket}),
+          gen_server:cast(trump_distribution, {client_connect, node(), ClientId}),
           NewState = State#trump_connection_state{trump_client_info = trumpClientInfo}
         end,
         {noreply, NewState}
@@ -187,21 +188,23 @@ handle_info({tcp, _RemoteSocket, BinData}, State) ->
       end
   end;
 
-
+%%
+%% TCP过程出现了ERROR
+%%
 handle_info({tcp_error, Socket, Reason}, State) ->
   io:format("TRUMP TCP DEBUG --->>> handle_info tcp_error ~p , Error from: ~p~n", [Reason, Socket]),
-  %% ets:match_delete(?TRUMP_CLIENT_TABLE, {'_', #trump_client_info{socket = Socket, _ = '_'}}),
   {stop, normal, State};
 
 %%
-%% 客户端连接主动断开:
-%% ETS结构:{trump_client_info,client_id, {127,0,0,1}, auth,esockd_transport,socket}
+%% 客户端连接主动断开:  ETS结构:{trump_client_info,client_id, {127,0,0,1}, auth,esockd_transport,socket}
+%% 
 handle_info({tcp_closed, Socket}, State) ->
   io:format("TRUMP TCP DEBUG --->>> Socket cloesd: ~p ~n", [Socket]),
   %% 从ETS中删除Socket
   ets:match_delete(?TRUMP_CLIENT_TABLE, {'_',{trump_client_info,'$1','$2', '$3', '$4', Socket}}),
   %% 通知集群
-  gen_server:cast(trump_distribution,{client_disconnect, node(), Socket}),
+  #trump_connection_state{ trump_client_info = #trump_client_info{client_id = ClientId}} = State,
+  gen_server:cast(trump_distribution,{client_disconnect, node(), ClientId}),
   {stop, normal, State};
 
 
@@ -228,8 +231,9 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 
-
+%%
 %% 给客户端发送消息
+%%
 send_to_client(Transport, Socket, Data) ->
   Transport:send(Socket, Data),
   Transport:setopts(Socket, [{active, once}]).
