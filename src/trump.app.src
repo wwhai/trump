@@ -9,7 +9,8 @@
     cowboy,
     esockd,
     mysql,
-    jiffy
+    jiffy,
+    tinymq
    ]},
   {env,[]},
   {modules, []},
