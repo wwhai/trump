@@ -35,15 +35,27 @@
 %% ====================================================================
 %% Behavioural functions
 %% ====================================================================
+
+%% 默认OTP的状态
 -record(state, {}).
-%% 集群状态下的客户端，多了一个Node属性
--record(trump_cluster_client, {trump_cluster_node, client_id}).
+%% 集群内的客户端 [节点，客户端ID]
+-record(trump_cluster_client, {node, client_id}).
+%% 集群内的订阅关系表 [节点-Topic-客户端ID]
+-record(trump_cluster_sub, {node, topic, client_id}).
+%% 本地订阅关系
+-record(trump_local_sub, { uuid,topic, client_id }).
+
 %% 节点保存表
--define(CLUSTER_NODE_TABLE,trump_cluster_node_table).
+-define(CLUSTER_NODE_TABLE,trump_node_table).
 %% 集群的客户端和节点之间的关系表
 -define(CLUSTER_CLIENT_TABLE,trump_cluster_client_table).
 %% 单节点的客户端表
 -define(TRUMP_CLIENT_TABLE, trump_client_table).
+%% 订阅关系表
+-define(CLUSTER_SUB_TABLE, trump_cluster_sub_table).
+%% 订阅关系表
+-define(LOCAL_SUB_TABLE, trump_local_sub_table).
+
 
 %% 
 %% start_link/0
@@ -53,8 +65,13 @@ start() ->
     mnesia:create_schema(get_nodes()),
     mnesia:start(),                                      
     %% 集群内的客户端存放表                                          
-    mnesia:create_table(?CLUSTER_CLIENT_TABLE, [{ram_copies, get_nodes()}, {attributes, record_info(fields, trump_cluster_client)}]),  
-    mnesia:add_table_index(?CLUSTER_CLIENT_TABLE, pid),                                        
+    mnesia:create_table(?CLUSTER_CLIENT_TABLE, [{ram_copies, get_nodes()}, {attributes, record_info(fields, trump_cluster_client)}]),
+    mnesia:add_table_index(?CLUSTER_CLIENT_TABLE, pid),        
+    %% 集群内的订阅关系表
+    mnesia:create_table(?CLUSTER_SUB_TABLE, [{ram_copies, get_nodes()}, {attributes, record_info(fields, trump_cluster_sub)}]),  
+    mnesia:add_table_index(?CLUSTER_SUB_TABLE, pid),        
+    %% 本地订阅关系表
+    ets:new(?LOCAL_SUB_TABLE,  [named_table, public, set, {keypos, #trump_local_sub.uuid}, {write_concurrency, true}, {read_concurrency, true}]),                                
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 %% init/1
