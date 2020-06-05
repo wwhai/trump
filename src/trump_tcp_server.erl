@@ -20,8 +20,15 @@ start(Port) when is_integer(Port) ->
   ets:new(?TRUMP_CLIENT_TABLE, EtsOptions),
   {ok, TcpOptions} = application:get_env(trump, tcp_options),
   MFA = {?MODULE, start_link, []},
-
-  {ok, MysqlOptions} = application:get_env(trump, mysql_options),
+  {ok , MysqlOptions} = application:get_env(trump, mysql_options),
+  {ok , SSL} =  application:get_env(trump, mysql_ssl),
+  case SSL of 
+    on -> 
+      {ok,{ SSLOptions }} = application:get_env(trump,mysql_ssl_options),
+      [MysqlOptions | SSLOptions];
+    off -> mysql_ssl_off
+  end,
+%%
   case mysql:start_link(MysqlOptions) of
     {ok, MysqlPid} ->
       register(mysql_connector, MysqlPid),
