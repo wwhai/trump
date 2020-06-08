@@ -57,4 +57,8 @@
  {<<"tinymq">>,
   {git,"https://github.com/ChicagoBoss/tinymq.git",
        {ref,"fa641265826e0f14a273d09881dd44abbb452796"}},
+  0},
+ {<<"uuid">>,
+  {git,"https://github.com/avtobiff/erlang-uuid.git",
+       {ref,"cb02a2039a9b29dd2eef0446039c9c6e164df9ef"}},
   0}].

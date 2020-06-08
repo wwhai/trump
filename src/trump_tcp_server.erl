@@ -2,6 +2,7 @@
 -module(trump_tcp_server).
 -behaviour(gen_server).
 -include("trump_protocol.hrl").
+-include_lib("kernel/include/logger.hrl").
 -export([start_link/2, start/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 %% 客户端的信息
@@ -22,29 +23,34 @@ start(Port) when is_integer(Port) ->
   MFA = {?MODULE, start_link, []},
   {ok , MysqlOptions} = application:get_env(trump, mysql_options),
   {ok , SSL} =  application:get_env(trump, mysql_ssl),
+  %% 是否开启SSL
   case SSL of 
     on -> 
-      {ok,{ SSLOptions }} = application:get_env(trump,mysql_ssl_options),
-      [MysqlOptions | SSLOptions];
-    off -> mysql_ssl_off
+      {ok, SSLOptions} = application:get_env(trump, mysql_ssl_options),
+      %% MysqlSSLConfig = MysqlOptions ++ {ssl,SSLOptions},
+      R = mysql:start_link(MysqlOptions ++ [{ssl,SSLOptions}]);
+    off -> 
+      R = mysql:start_link(MysqlOptions)
   end,
 %%
-  case mysql:start_link(MysqlOptions) of
-    {ok, MysqlPid} ->
-      register(mysql_connector, MysqlPid),
-      {ok, _, [[Version]]} = mysql:query(mysql_connector, <<"SELECT version()">>),
-      io:format("TRUMP TCP DEBUG --->>> Mysql has connected,Pid is ~p ,version is ~p ~n", [MysqlPid, Version]),
-      esockd:start(),
-      esockd:open(trap_connector, Port, TcpOptions, MFA);
-    {error, {_ErrorCode, _StatementId, ErrorMessage}} ->
-      io:format("TRUMP TCP DEBUG --->>> Mysql connect error reason is ~p ~n", [ErrorMessage]);
-    {error, {{badmatch, {error, econnrefused}}, _}} ->
-      io:format("TRUMP TCP DEBUG --->>> Mysql connect refused maybe network or port unreached.Your options is ~p ~n", [MysqlOptions]);
-    {error, Other} ->
-      io:format("TRUMP TCP DEBUG --->>> Mysql connect error reason is ~p ~n", [Other]);
-    ignore ->
-      ignore
-  end.
+%% 连接Mysql
+%%
+case R of
+  {ok, MysqlPid} ->
+    register(mysql_connector, MysqlPid),
+    {ok, _, [[Version]]} = mysql:query(mysql_connector, <<"SELECT version()">>),
+    io:format("TRUMP TCP DEBUG --->>> Mysql has connected,Pid is ~p ,version is ~p ~n", [MysqlPid, Version]),
+    esockd:start(),
+    esockd:open(trap_connector, Port, TcpOptions, MFA);
+  {error, {_ErrorCode, _StatementId, ErrorMessage}} ->
+    io:format("TRUMP TCP DEBUG --->>> Mysql connect error reason is ~p ~n", [ErrorMessage]);
+  {error, {{badmatch, {error, econnrefused}}, _}} ->
+    io:format("TRUMP TCP DEBUG --->>> Mysql connect refused maybe network or port unreached.Your options is ~p ~n", [MysqlOptions]);
+  {error, Other} ->
+    io:format("TRUMP TCP DEBUG --->>> Mysql connect error reason is ~p ~n", [Other]);
+  ignore ->
+    ignore
+end.
 
 start_link(Transport, Socket) ->
 
@@ -110,11 +116,11 @@ handle_cast({auth, PayLoad}, State) ->
           %% 构建客户端信息
           io:format("TRUMP TCP DEBUG --->>> This client is First join ~n"),
           #trump_connection_state{transport = Transport, socket = Socket, trump_client_info = #trump_client_info{ip = IP}} = State,
-          trumpClientInfo = #trump_client_info{ client_id = ClientId ,auth = true,transport = Transport,socket = Socket,ip = IP},    
-          ets:insert(?TRUMP_CLIENT_TABLE,  trumpClientInfo),
+          TrumpClientInfo = #trump_client_info{ client_id = ClientId ,auth = true,transport = Transport,socket = Socket,ip = IP},    
+          ets:insert(?TRUMP_CLIENT_TABLE,  TrumpClientInfo),
           %% 通知分布层
           gen_server:cast(trump_distribution, {client_connect, node(), ClientId}),
-          NewState = State#trump_connection_state{trump_client_info = trumpClientInfo};
+          NewState = State#trump_connection_state{trump_client_info = TrumpClientInfo};
         %% ETS有记录，把前者踢下去
         %% [{trump_client_info, _C, _I, _A , _T, Socket}] = ets:match_object(trump_client_table,{trump_client_info,<<"4d45d94142276ad38364049c56d8ed42">>,'$2', '$3', '$4','$5'}).
         [{trump_client_info, _C, _I, _A , Transport, BeforeSocket}] ->
@@ -123,12 +129,12 @@ handle_cast({auth, PayLoad}, State) ->
           %% 构建新的进程状态
           #trump_connection_state{transport = Transport, socket = Socket, trump_client_info = #trump_client_info { ip = IP } } = State,
           %% 直接生成新的客户端信息
-          trumpClientInfo = #trump_client_info{ client_id = ClientId ,auth = true,transport = Transport,socket = Socket,ip = IP},    
+          TrumpClientInfo = #trump_client_info{ client_id = ClientId ,auth = true,transport = Transport,socket = Socket,ip = IP},    
           io:format("TRUMP TCP DEBUG --->>> Build new socket: ~p ~n",[Socket]),
-          ets:insert(?TRUMP_CLIENT_TABLE,  trumpClientInfo),
+          ets:insert(?TRUMP_CLIENT_TABLE,  TrumpClientInfo),
           %% 通知分布层
           gen_server:cast(trump_distribution, {client_connect, node(), ClientId}),
-          NewState = State#trump_connection_state{trump_client_info = trumpClientInfo}
+          NewState = State#trump_connection_state{trump_client_info = TrumpClientInfo}
         end,
         {noreply, NewState}
   end;

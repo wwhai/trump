@@ -18,6 +18,8 @@
 ## 3. 编译
 
 ```shell
+## 单元测试
+rebar3 ct
 ## 编译
 rebar3 compile
 ## 命令行交互式调试
@@ -52,10 +54,21 @@ rebar3 release -n trump-1.0
 ​        TRUMP的核心是同时支持基于原生TCP（Raw TCP）和原生UDP（Raw UDP）两种类型的通信形式，对于这两种传输层协议做了最简单的封装，故命名为中间层协议（Middle Protocol）。
 ​        本协议的设计相对来讲比较通俗易懂，都是基础知识，可以为初学者提供一些设计思路，这些思路可以用在游戏开发，IM开发，还有物联网终端通信等等，其实就是提供了一个把传输层往应用层靠拢的最基础的思路。
 
-## 5.说明
+## 5.客户端数据表
+```sql
+CREATE TABLE `client` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `username` varchar(200) DEFAULT NULL COMMENT 'MQTT用户名',
+  `client_id` varchar(200) DEFAULT NULL COMMENT 'MQTT ClientID',
+  `password` varchar(200) DEFAULT NULL COMMENT 'MQTT密码',
+  `token` varchar(255) DEFAULT NULL COMMENT '认证token',
+  `description` varchar(200) DEFAULT NULL COMMENT '描述',
+  `create_time` datetime NOT NULL COMMENT '创建时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC;
+```
 
-​        该设计当然是不完善的，远远达不到工业级的水准，所以各位朋友如果发现问题或者设计思路有大问题，可以指出。但是不接受喷子和高论，如果某个大佬有高论或者更优秀的设想，请自己亲自实现一遍比较好。
-讲文明树新风，文明社会树立文明形象。
+## 6.说明
 
-​        祝大家技术越来越牛逼。
-
+​该设计当然是不完善的，远远达不到工业级的水准，所以各位朋友如果发现问题或者设计思路有大问题，可以指出。但是不接受喷子和高论，如果某个大佬有高论或者更优秀的设想，请自己亲自实现一遍比较好。同时欢迎有兴趣的人一起讨论物联网技术话题。
+讲文明树新风，文明社会树立文明形象。祝大家技术越来越牛逼。
