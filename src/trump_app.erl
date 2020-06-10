@@ -21,8 +21,12 @@ start(_StartType, _StartArgs) ->
     io:format("TRUMP Server DEBUG **********************************>>> Start udp listener ~n"),
     trump_udp_server_sup:start_link(UdpPort),
 
-    io:format("TRUMP Server DEBUG **********************************>>> Start K-V server ~n"),
-    trump_kv_server_sup:start_link(KVPort).
+    io:format("TRUMP Server DEBUG **********************************>>> Start KV server ~n"),
+    trump_kv_server_sup:start_link(KVPort),
+
+    io:format("TRUMP Server DEBUG **********************************>>> Start Mysql connector ~n"),
+    trump_db_mysql_sup:start_link().
+
 
 stop(_State) ->
     ok.

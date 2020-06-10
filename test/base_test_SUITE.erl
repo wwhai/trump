@@ -47,3 +47,4 @@ mysql_query(_)->
 		ignore ->
 		ignore
 	end.
+

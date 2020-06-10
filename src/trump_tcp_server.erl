@@ -21,36 +21,8 @@ start(Port) when is_integer(Port) ->
   ets:new(?TRUMP_CLIENT_TABLE, EtsOptions),
   {ok, TcpOptions} = application:get_env(trump, tcp_options),
   MFA = {?MODULE, start_link, []},
-  {ok , MysqlOptions} = application:get_env(trump, mysql_options),
-  {ok , SSL} =  application:get_env(trump, mysql_ssl),
-  %% 是否开启SSL
-  case SSL of 
-    on -> 
-      {ok, SSLOptions} = application:get_env(trump, mysql_ssl_options),
-      %% MysqlSSLConfig = MysqlOptions ++ {ssl,SSLOptions},
-      R = mysql:start_link(MysqlOptions ++ [{ssl,SSLOptions}]);
-    off -> 
-      R = mysql:start_link(MysqlOptions)
-  end,
-%%
-%% 连接Mysql
-%%
-case R of
-  {ok, MysqlPid} ->
-    register(mysql_connector, MysqlPid),
-    {ok, _, [[Version]]} = mysql:query(mysql_connector, <<"SELECT version()">>),
-    io:format("TRUMP TCP DEBUG --->>> Mysql has connected,Pid is ~p ,version is ~p ~n", [MysqlPid, Version]),
-    esockd:start(),
-    esockd:open(trap_connector, Port, TcpOptions, MFA);
-  {error, {_ErrorCode, _StatementId, ErrorMessage}} ->
-    io:format("TRUMP TCP DEBUG --->>> Mysql connect error reason is ~p ~n", [ErrorMessage]);
-  {error, {{badmatch, {error, econnrefused}}, _}} ->
-    io:format("TRUMP TCP DEBUG --->>> Mysql connect refused maybe network or port unreached.Your options is ~p ~n", [MysqlOptions]);
-  {error, Other} ->
-    io:format("TRUMP TCP DEBUG --->>> Mysql connect error reason is ~p ~n", [Other]);
-  ignore ->
-    ignore
-end.
+  esockd:start(),
+  esockd:open(trap_connector, Port, TcpOptions, MFA).
 
 start_link(Transport, Socket) ->
 
@@ -97,18 +69,13 @@ handle_cast({auth, PayLoad}, State) ->
 
   <<ClientId:32/binary, _/binary>> = PayLoad,
   io:format("TRUMP TCP DEBUG --->>> Require auth and clientid is:~p ~n", [ClientId]),
-
-  {ok, Sql} = application:get_env(trump, authsql),
-  {ok, StatementId} = mysql:prepare(mysql_connector, Sql),
-  R = mysql:execute(mysql_connector, StatementId, [ClientId]),
-
-  case R of
-    {ok, [<<"id">>,<<"client_id">>], []} ->
+  case trump_db_mysql:auth(ClientId) of
+    false ->
       io:format("TRUMP TCP DEBUG --->>> Auth failure~n"),
       gen_server:cast(self(), auth_failure),
       {noreply, State};
-    {ok, [<<"id">>,<<"client_id">>], [[_DBIdx,CId]]} ->
-      io:format("TRUMP TCP DEBUG --->>> Auth success:~p ~n", [CId]),
+    true ->
+      io:format("TRUMP TCP DEBUG --->>> Auth success:~p ~n", [ClientId]),
       Object = ets:match_object(?TRUMP_CLIENT_TABLE , {trump_client_info , ClientId ,'$1', '$2' , '$3', '$4' } ),
       case Object of 
         %% ETS没有记录，直接连接
@@ -209,7 +176,8 @@ handle_info({tcp_error, Socket, Reason}, State) ->
   {stop, normal, State};
 
 %%
-%% 客户端连接主动断开:  ETS结构:{trump_client_info,client_id, {127,0,0,1}, auth,esockd_transport,socket}
+%% 客户端连接主动断开:  
+%% ETS结构:{trump_client_info,client_id, {127,0,0,1}, auth,esockd_transport,socket}
 %% 
 handle_info({tcp_closed, Socket}, State) ->
   io:format("TRUMP TCP DEBUG --->>> Socket cloesd: ~p ~n", [Socket]),

@@ -13,7 +13,6 @@
 
 -export([start/1]).
 -export([start_link/2, loop/2]).
-
 %%
 %% ACL 表
 %%
@@ -66,46 +65,34 @@ loop(Transport, PeerSocket) ->
 %% {ok, Socket} = gen_udp:open(0, [binary]).
 %% gen_udp:send(Socket, "localhost", 5001, <<"8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA">>).
 %%
-
+%% 收到的数据包格式：
+%% 1:SEND数据包
+%%  ----------------------
+%% ｜TYPE｜CLIENT_ID｜DATA|
+%%  ----------------------
+%% 2:广播数据包
+%%  -------------------------------
+%% ｜TYPE｜CLIENT_ID｜GROUP_ID|DATA|
+%%  -------------------------------
 hand_udp_data(UdpData, {udp, _Server, TransSocket}, {IP, Port}) ->
-  %% 收到的数据包格式：
-  %% 1:SEND数据包
-  %%  ----------------------
-  %% ｜TYPE｜CLIENT_ID｜DATA|
-  %%  ----------------------
-  %% 2:PUBLISH数据包
-  %%  -------------------------------------
-  %% ｜TYPE｜CLIENT_ID｜PEER_CLIENT_ID|DATA|
-  %%  -------------------------------------
-  %% 3:广播数据包
-  %%  -------------------------------
-  %% ｜TYPE｜CLIENT_ID｜GROUP_ID|DATA|
-  %%  -------------------------------
+
   try
     <<Type:8, ClientId:32/binary, Payload/binary>> = UdpData,
     case check_permission(ClientId) of
-      ok -> ok;
-      deny -> deny
-    end,
-    case (Type) of
-       ?SEND ->
-        <<Data/binary>> = Payload,
-        logger:info("SEND ClientId is:~p Data is:~p~n", [ClientId, Data]);
-
-       ?PUBLISH ->
-        <<PeerClientId:32/binary, Data/binary>> = Payload,
-        logger:info(
-          "PUBLISH ClientId is:~p PeerClientId is ~p Data is:~p~n",
-          [ClientId, PeerClientId, Data]
-        );
-
-       ?CAST ->
-        <<GroupId:32/binary, Data/binary>> = Payload,
-        logger:info("CAST ClientId is:~p GroupId is ~p Data is:~p~n", [ClientId, GroupId, Data]);
-
-      Other ->
-        gen_udp:send(TransSocket, IP, Port, <<?PROTOCOL_ERROR>>),
-        logger:info("Other Type is:~p~n", [Other])
+      true -> 
+        case (Type) of
+          ?SEND ->
+                <<Data/binary>> = Payload,
+                logger:info("SEND ClientId is:~p Data is:~p~n", [ClientId, Data]);
+          ?CAST ->
+                <<GroupId:32/binary, Data/binary>> = Payload,
+                logger:info("CAST ClientId is:~p GroupId is ~p Data is:~p~n", [ClientId, GroupId, Data]);
+          Other ->
+                gen_udp:send(TransSocket, IP, Port, <<?PROTOCOL_ERROR>>),
+                logger:info("Other Type is:~p~n", [Other])
+       end;
+      _ -> 
+        false
     end
   catch
     %% 协议错误
@@ -118,18 +105,22 @@ hand_udp_data(UdpData, {udp, _Server, TransSocket}, {IP, Port}) ->
 %% 生成UUID 客户端用ClientID来换取Token(UUID) 然后UUID作为口令提交数据
 %%
 proclaim_uuid(ClientId) ->
-  Row = #trump_acl_permission{client_id = ClientId, uuid = uuid:to_string()},
+  Row = #trump_acl_permission{client_id = ClientId, uuid = gen_uuid()},
   ets:insert(?TRUMP_ACL_TABLE, Row), 
   Row.
+
+%% 产生32位长度的UUID字符串：0e0ce38a4eee5e5985ed4e82d3e95680
+gen_uuid() -> 
+    lists:concat(string:tokens(uuid:to_string(uuid:uuid5(uuid:uuid4(), "trump")), "-")).
 
 %%
 %% 检查是否有权限发布消息
 %% K：ClientId V：UUID
 %%
 
-check_permission(ClientId) ->
-  Object = ets:match_object(?TRUMP_ACL_TABLE, {trump_acl_permission, ClientId, '$1'}),
-  case Object of
-    [] -> deny;
-    _Other -> ok
-  end.
+check_permission(_ClientId) -> true.
+  % Object = ets:match_object(?TRUMP_ACL_TABLE, {trump_acl_permission, ClientId, '$1'}),
+  % case Object of
+  %   [] -> deny;
+  %   _Other -> ok
+  % end.

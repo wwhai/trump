@@ -61,4 +61,8 @@
  {<<"uuid">>,
   {git,"https://github.com/avtobiff/erlang-uuid.git",
        {ref,"cb02a2039a9b29dd2eef0446039c9c6e164df9ef"}},
+  0},
+ {<<"worker_pool">>,
+  {git,"https://github.com/inaka/worker_pool.git",
+       {ref,"5ea7510ecd0318b9f39484fb5fa45bcec3a1c59a"}},
   0}].
